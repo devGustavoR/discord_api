@@ -9,6 +9,63 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
+const PERMISSIONS: { flag: string; label: string; key: string }[] = [
+  { flag: '0x1',        key: 'convite',         label: '📨 Criar convite' },
+  { flag: '0x2',        key: 'kick',            label: '🥾 Kickar membros' },
+  { flag: '0x4',        key: 'ban',             label: '🔨 Banir membros' },
+  { flag: '0x8',        key: 'admin',           label: '👑 Administrador' },
+  { flag: '0x10',       key: 'canais',          label: '⚙️ Gerenciar canais' },
+  { flag: '0x20',       key: 'servidor',        label: '🏰 Gerenciar servidor' },
+  { flag: '0x40',       key: 'reacoes',         label: '😀 Adicionar reações' },
+  { flag: '0x80',       key: 'log',             label: '📋 Ver log de auditoria' },
+  { flag: '0x400',      key: 'ver',             label: '👁️ Ver canais' },
+  { flag: '0x800',      key: 'mensagens',       label: '💬 Enviar mensagens' },
+  { flag: '0x2000',     key: 'gerenciar-msgs',  label: '🗑️ Gerenciar mensagens' },
+  { flag: '0x4000',     key: 'links',           label: '🔗 Incorporar links' },
+  { flag: '0x8000',     key: 'arquivos',        label: '📎 Anexar arquivos' },
+  { flag: '0x10000',    key: 'historico',       label: '📖 Ver histórico' },
+  { flag: '0x20000',    key: 'mencionar-todos', label: '📣 Mencionar @everyone' },
+  { flag: '0x40000',    key: 'emojis',          label: '😄 Emojis externos' },
+  { flag: '0x100000',   key: 'voz',             label: '🔊 Conectar em voz' },
+  { flag: '0x200000',   key: 'falar',           label: '🎙️ Falar em voz' },
+  { flag: '0x400000',   key: 'mutar',           label: '🔇 Mutar membros' },
+  { flag: '0x800000',   key: 'ensurdecer',      label: '🔕 Ensurdecer membros' },
+  { flag: '0x1000000',  key: 'mover',           label: '🚚 Mover membros' },
+  { flag: '0x4000000',  key: 'apelido',         label: '✏️ Mudar próprio apelido' },
+  { flag: '0x8000000',  key: 'apelidos',        label: '📝 Gerenciar apelidos' },
+  { flag: '0x10000000', key: 'cargos',          label: '🏷️ Gerenciar cargos' },
+  { flag: '0x20000000', key: 'webhooks',        label: '🔗 Gerenciar webhooks' },
+  { flag: '0x80000000', key: 'slash',           label: '🤖 Usar comandos de app' },
+]
+
+function decodePermissions(bits: string): string[] {
+  const perms = BigInt(bits)
+  const admin = PERMISSIONS.find(p => p.key === 'admin')!
+  if (perms & BigInt(admin.flag)) return ['👑 *Administrador* — acesso total']
+  return PERMISSIONS.filter(p => perms & BigInt(p.flag)).map(p => p.label)
+}
+
+function applyPermChanges(current: string, changes: string[]): { bits: string; added: string[]; removed: string[] } {
+  let perms = BigInt(current)
+  const added: string[] = []
+  const removed: string[] = []
+
+  for (const change of changes) {
+    const op = change[0]
+    const key = change.slice(1).toLowerCase()
+    const entry = PERMISSIONS.find(p => p.key === key)
+    if (!entry) continue
+    const flag = BigInt(entry.flag)
+    if (op === '+') {
+      if (!(perms & flag)) { perms |= flag; added.push(entry.label) }
+    } else if (op === '-') {
+      if (perms & flag) { perms &= ~flag; removed.push(entry.label) }
+    }
+  }
+
+  return { bits: perms.toString(), added, removed }
+}
+
 async function typing(chatId: number) {
   await fetch(`${TG}/sendChatAction`, {
     method: 'POST',
@@ -98,6 +155,111 @@ async function handleCommand(chatId: number, text: string) {
       await sendMessage(chatId, pick([
         `✂️ Cargo removido. Vida que segue!`,
         `📉 Membro rebaixado. Cargo retirado.`,
+      ]))
+      break
+    }
+
+    case '/infocargo': {
+      // /infocargo ROLE_ID
+      const [roleId] = args
+      if (!roleId) { await sendMessage(chatId, `⚠️ Uso: /infocargo ROLE_ID`); break }
+      const all = await callAPI('GET', '/api/roles')
+      const role = all.find((r: any) => r.id === roleId)
+      if (!role) { await sendMessage(chatId, `❌ Cargo não encontrado com ID \`${roleId}\``); break }
+      const perms = decodePermissions(role.permissions ?? '0')
+      const permList = perms.length ? perms.map(p => `• ${p}`).join('\n') : '• Nenhuma permissão'
+      const color = role.color ? `#${role.color.toString(16).padStart(6, '0').toUpperCase()}` : 'Sem cor'
+      await sendMessage(chatId,
+        `🏷️ *${role.name}*\n` +
+        `🎨 Cor: \`${color}\`\n` +
+        `📌 Fixado na lista: ${role.hoist ? 'Sim' : 'Não'}\n` +
+        `📣 Mencionável: ${role.mentionable ? 'Sim' : 'Não'}\n` +
+        `🆔 \`${role.id}\`\n\n` +
+        `🔐 *Permissões (${perms.length}):*\n${permList}\n\n` +
+        `_Use /permcargo ${roleId} \\+key \\-key para editar_`
+      )
+      break
+    }
+
+    case '/perms': {
+      // /perms — lista todos os keys disponíveis
+      const list = PERMISSIONS.map(p => `• \`${p.key}\` — ${p.label}`).join('\n')
+      await sendMessage(chatId,
+        `🔐 *Permissões disponíveis:*\n\n${list}\n\n` +
+        `_Uso: /permcargo ROLE\\_ID \\+key \\-key_`
+      )
+      break
+    }
+
+    case '/permcargo': {
+      // /permcargo ROLE_ID +kick +ban -mensagens
+      const [roleId, ...changes] = args
+      if (!roleId || changes.length === 0) {
+        await sendMessage(chatId,
+          `⚠️ Uso: /permcargo ROLE\\_ID \\+key \\-key\n\n` +
+          `Exemplos:\n` +
+          `\`/permcargo ID +kick +ban\`\n` +
+          `\`/permcargo ID -admin +mensagens\`\n\n` +
+          `Use /perms para ver todos os keys disponíveis`
+        )
+        break
+      }
+      const invalid = changes.filter(c => !['+', '-'].includes(c[0]) || !PERMISSIONS.find(p => p.key === c.slice(1).toLowerCase()))
+      if (invalid.length) {
+        await sendMessage(chatId, `❌ Inválido: ${invalid.map(i => `\`${i}\``).join(', ')}\nUse /perms para ver os keys corretos`)
+        break
+      }
+      const all = await callAPI('GET', '/api/roles')
+      const role = all.find((r: any) => r.id === roleId)
+      if (!role) { await sendMessage(chatId, `❌ Cargo não encontrado com ID \`${roleId}\``); break }
+      const { bits, added, removed } = applyPermChanges(role.permissions ?? '0', changes)
+      if (!added.length && !removed.length) {
+        await sendMessage(chatId, `ℹ️ Nenhuma alteração — o cargo já tinha essas permissões nesse estado.`)
+        break
+      }
+      const data = await callAPI('PATCH', `/api/roles/${roleId}`, { permissions: bits })
+      const lines: string[] = [`✅ *${data.name}* atualizado!\n`]
+      if (added.length) lines.push(`*Adicionado:*\n${added.map(l => `• ${l}`).join('\n')}`)
+      if (removed.length) lines.push(`*Removido:*\n${removed.map(l => `• ${l}`).join('\n')}`)
+      await sendMessage(chatId, lines.join('\n'))
+      break
+    }
+
+    case '/editacargo': {
+      // /editacargo ROLE_ID campo valor
+      // campos: nome, cor, hoist, mencionar
+      const [roleId, campo, ...restVal] = args
+      if (!roleId || !campo) {
+        await sendMessage(chatId,
+          `⚠️ Uso: /editacargo ROLE\\_ID campo valor\n\n` +
+          `Campos disponíveis:\n` +
+          `• \`nome\` — novo nome do cargo\n` +
+          `• \`cor\` — cor em hex (ex: \\#FF5733)\n` +
+          `• \`hoist\` — fixar na lista (true/false)\n` +
+          `• \`mencionar\` — mencionável (true/false)`
+        )
+        break
+      }
+      const val = restVal.join(' ')
+      const fieldMap: Record<string, string> = {
+        nome: 'name',
+        cor: 'color',
+        hoist: 'hoist',
+        mencionar: 'mentionable',
+      }
+      const apiField = fieldMap[campo.toLowerCase()]
+      if (!apiField) {
+        await sendMessage(chatId, `❌ Campo inválido: \`${campo}\`\nUse: nome, cor, hoist ou mencionar`)
+        break
+      }
+      let parsedVal: string | boolean = val
+      if (apiField === 'hoist' || apiField === 'mentionable') {
+        parsedVal = val === 'true'
+      }
+      const data = await callAPI('PATCH', `/api/roles/${roleId}`, { [apiField]: parsedVal })
+      await sendMessage(chatId, pick([
+        `✅ Cargo *${data.name}* atualizado!\n🔧 \`${campo}\` → \`${val}\``,
+        `📝 Feito! *${data.name}* foi editado com sucesso.`,
       ]))
       break
     }
@@ -296,6 +458,10 @@ async function handleCommand(chatId: number, text: string) {
 /deletacargo ID — deleta cargo
 /dacargo ROLE\\_ID USER\\_ID — dá cargo
 /removecargo ROLE\\_ID USER\\_ID — remove cargo
+/infocargo ROLE\\_ID — info e permissões do cargo
+/editacargo ROLE\\_ID campo valor — edita nome/cor/hoist
+/permcargo ROLE\\_ID \\+key \\-key — edita permissões
+/perms — lista todos os keys de permissão
 
 👤 *Membros*
 /membro USER\\_ID — info do membro
