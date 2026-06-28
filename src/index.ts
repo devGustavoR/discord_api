@@ -6,8 +6,17 @@ import { channels } from './routes/channels'
 import { members } from './routes/members'
 import { messages } from './routes/messages'
 import { roles } from './routes/roles'
+import { DiscordAPIError } from './lib/discord'
 
 const app = new Hono()
+
+app.onError((err, c) => {
+  if (err instanceof DiscordAPIError) {
+    return c.json({ message: err.message }, err.status as any)
+  }
+  console.error(err)
+  return c.json({ message: 'Erro interno do servidor' }, 500)
+})
 
 app.use('*', logger())
 app.use('*', cors({
