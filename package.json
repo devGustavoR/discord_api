@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "start": "bun run src/index.ts"
+    "start": "bun run src/index.ts",
+    "bot:dev": "bun run --watch src/bot.ts",
+    "bot": "bun run src/bot.ts"
   },
   "dependencies": {
     "hono": "^4.4.0",
